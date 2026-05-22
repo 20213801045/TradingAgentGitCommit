@@ -65,16 +65,10 @@ class Conflict(BaseModel):
 
 
 class DecisionScores(BaseModel):
-    """Quantitative investment-decision metrics derived during merge."""
+    """Actionable investment-decision scores."""
 
-    support_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    risk_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    opposition_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    entry_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    risk_reward_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    conviction_score: float = Field(default=0.0, ge=0.0, le=100.0)
-    valuation_attractiveness: float = Field(default=0.0, ge=0.0, le=100.0)
-    technical_timing_score: float = Field(default=0.0, ge=0.0, le=100.0)
+    directional_conviction: float = Field(default=50.0, ge=0.0, le=100.0)
+    entry_timing: float = Field(default=0.0, ge=0.0, le=100.0)
     risk_level: Literal["low", "medium", "high"] = "medium"
     position_sizing_suggestion: str = "Observation only"
 
