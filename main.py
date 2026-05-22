@@ -7,23 +7,15 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from agents import (
-    BearAgent,
-    BacktestAgent,
-    BullAgent,
     CounterEvidenceAgent,
-    FinancialStatementAgent,
-    FundamentalAgent,
-    IndustryComparisonAgent,
-    LLMAnalysisAgent,
-    MacroAgent,
-    MergeAgent,
-    PortfolioAgent,
+    DeepResearchAgent,
+    MacroSentimentAgent,
     ResearchCoordinatorAgent,
-    ReportAgent,
     RiskAgent,
-    TechnicalAgent,
-    ValuationAgent,
+    TechnicalTimingAgent,
 )
+from agents.debate_agent import DebateAgent
+from agents.trade_plan_report_agent import TradePlanReportAgent
 from config import (
     DEFAULT_OUTPUT_DIR,
     DEFAULT_REPORT_DIR,
@@ -43,6 +35,7 @@ from data import (
 )
 from evidence import process_workspace_evidence
 from evaluation import Evaluator, save_evaluation_result
+from prediction_evaluator import PredictionTracker
 from llm import BaseLLMClient, CachedLLMClient, LLMError, get_llm_client
 from models.schemas import (
     ClaimEvidenceCommit,
@@ -119,17 +112,9 @@ def run_pipeline(
 
     branch_descriptions = {
         "research-coordination": "主协调 agent 的研究计划、覆盖审查和后续优先级。",
-        "fundamental-analysis": "基本面质量、盈利能力和现金生成能力。",
-        "financial-statement-analysis": "财务报表质量和资产负债表深挖。",
-        "valuation-analysis": "绝对估值和相对估值证据。",
-        "industry-comparison": "同行和行业基准比较。",
-        "macro-analysis": "宏观环境和需求背景。",
-        "technical-analysis": "价格走势、趋势和择时证据。",
-        "backtest-analysis": "简单策略表现和回撤复盘。",
-        "portfolio-review": "仓位、流动性和组合适配性。",
-        "llm-analysis": "大模型综合投研洞察。",
-        "bull-case": "上行催化和正面投资假设。",
-        "bear-case": "下行风险和谨慎观点。",
+        "deep-research": "LLM驱动的深度基本面、财报、估值和行业分析（一站式）。",
+        "macro-analysis": "LLM驱动的宏观环境、利率和汇率评估。",
+        "technical-analysis": "LLM驱动的技术面趋势、动量、波动率和择时信号。",
         "risk-review": "关键风险、脆弱点和修正条件。",
         "counter-evidence": "针对重要正面观点的反证检查。",
     }
@@ -147,35 +132,18 @@ def run_pipeline(
         workspace,
     )
 
-    # Stage 1: source analysis directly from provider data.
+    # Stage 1: LLM-driven analysis (3 agents replace the old 8 + bull/bear).
     _run_agent_group_stage(
-        "Source analysis agents",
+        "Analysis agents",
         [
-            ("FundamentalAgent", FundamentalAgent(llm_client=llm_client), company_data),
-            ("FinancialStatementAgent", FinancialStatementAgent(), company_data),
-            ("ValuationAgent", ValuationAgent(llm_client=llm_client), company_data),
-            ("IndustryComparisonAgent", IndustryComparisonAgent(), company_data),
-            ("MacroAgent", MacroAgent(), company_data),
-            ("TechnicalAgent", TechnicalAgent(llm_client=llm_client), company_data),
-            ("BacktestAgent", BacktestAgent(), company_data),
-            ("PortfolioAgent", PortfolioAgent(), company_data),
+            ("DeepResearchAgent", DeepResearchAgent(llm_client=llm_client), company_data),
+            ("MacroSentimentAgent", MacroSentimentAgent(llm_client=llm_client), company_data),
+            ("TechnicalTimingAgent", TechnicalTimingAgent(llm_client=llm_client), company_data),
         ],
         workspace,
     )
-    _run_stage(
-        "LLMAnalysisAgent",
-        lambda: _add_commits(
-            workspace,
-            LLMAnalysisAgent(llm_client=llm_client).analyze(workspace),
-        ),
-        result_formatter=lambda count: f"{count} commits",
-    )
 
-    # Stage 2: thesis agents reuse evidence from source-analysis branches.
-    _run_agent_stage("BullAgent", BullAgent(), {}, workspace)
-    _run_agent_stage("BearAgent", BearAgent(), {}, workspace)
-
-    # Stage 3: risk review audits all prior claim-evidence commits.
+    # Stage 2: risk review audits all prior claim-evidence commits.
     _run_agent_stage("RiskAgent", RiskAgent(llm_client=llm_client), {}, workspace)
 
     # Stage 4: score evidence before selecting positive claims for challenge.
@@ -205,44 +173,60 @@ def run_pipeline(
     print()
     _print_commits_by_branch(workspace)
 
-    merge_agent = MergeAgent()
+    # ── Prediction tracker (closed-loop learning) ───────────────
+    tracker = PredictionTracker(
+        storage_path=Path(output_dir) / ".evir_predictions.json"
+    )
+    # Evaluate old predictions before making new ones
+    tracker.evaluate_all()
+
+    # ── NEW: LLM-powered debate agent (replaces keyword-matching merge) ──
+    debate_agent = DebateAgent(llm_client=llm_client, tracker=tracker)
     merge_result = _run_stage(
-        "MergeAgent",
-        lambda: merge_agent.merge(workspace),
+        "DebateAgent (LLM debate)",
+        lambda: debate_agent.debate(workspace),
         result_formatter=lambda result: f"recommendation={result.final_recommendation} confidence={result.confidence}",
     )
-    _print_merge_result(merge_result, merge_agent)
+    _print_merge_result(merge_result, debate_agent)
 
-    report_agent = ReportAgent()
+    # ── NEW: Trade-plan report (actionable format) ──
+    trade_plan_agent = TradePlanReportAgent()
     report = _run_stage(
-        "ReportAgent generate report",
-        lambda: report_agent.generate_report(workspace, merge_result),
+        "TradePlanReportAgent generate",
+        lambda: trade_plan_agent.generate_report(workspace, merge_result),
     )
     markdown_report_path, json_report_path = _run_stage(
-        "ReportAgent save report",
-        lambda: report_agent.save_report(report, report_dir),
-        result_formatter=lambda paths: f"markdown={paths[0]} json={paths[1]}",
+        "TradePlanReportAgent save",
+        lambda: trade_plan_agent.save_report(report, report_dir),
+        result_formatter=lambda paths: f"trade_plan_md={paths[0]} json={paths[1]}",
     )
     print()
-    print(f"Saved Markdown report to: {markdown_report_path}")
-    print(f"Saved JSON report to: {json_report_path}")
+    print(f"Saved Trade Plan to: {markdown_report_path}")
     if preview_lines > 0:
         print()
         _print_report_preview(report.markdown_report, preview_lines)
 
-    evaluator = Evaluator()
-    evaluation_result = _run_stage(
-        "Evaluator",
-        lambda: evaluator.evaluate(workspace, merge_result, report),
-        result_formatter=lambda result: f"overall_score={result.overall_score:.2f}",
+    # ── Record prediction & evaluate accuracy (replaces old audit scoring) ──
+    market_data = company_data.get("market_data", {})
+    current_price = market_data.get("current_price") if isinstance(market_data, dict) else company_data.get("current_price")
+    _run_stage(
+        "PredictionTracker record",
+        lambda: tracker.record(
+            ticker=workspace.ticker,
+            recommendation=merge_result.final_recommendation,
+            confidence=merge_result.confidence,
+            current_price=float(current_price) if current_price else None,
+            decision_rationale=merge_result.decision_rationale,
+        ),
+        result_formatter=lambda _: "saved",
     )
-    evaluation_path = _run_stage(
-        "Save evaluation",
-        lambda: save_evaluation_result(evaluation_result, workspace.ticker),
-    )
+    accuracy = tracker.accuracy_summary()
+    score = tracker.prediction_score()
     print()
-    _print_evaluation_result(evaluation_result)
-    print(f"Saved evaluation to: {evaluation_path}")
+    print(f"{'='*60}")
+    print(f"📊 PREDICTION QUALITY: {score['prediction_quality_score']}/100 — {score['rating']}")
+    print(f"   Directional accuracy: {score['directional_accuracy_pct']}% ({score['evaluated_count']} evaluated)")
+    print(f"{'='*60}")
 
     revision_evidence_provider = new_evidence_provider or _revision_evidence_provider(
         provider,
@@ -315,20 +299,7 @@ def _run_stage(
 
 def _run_agent_stage(
     label: str,
-    agent: (
-        FundamentalAgent
-        | FinancialStatementAgent
-        | ValuationAgent
-        | IndustryComparisonAgent
-        | MacroAgent
-        | TechnicalAgent
-        | BacktestAgent
-        | PortfolioAgent
-        | ResearchCoordinatorAgent
-        | BullAgent
-        | BearAgent
-        | RiskAgent
-    ),
+    agent: object,
     input_data: dict[str, object],
     workspace: Workspace,
 ) -> int:
@@ -341,18 +312,7 @@ def _run_agent_stage(
     )
 
 
-SourceAgentTask = tuple[
-    str,
-    FundamentalAgent
-    | FinancialStatementAgent
-    | ValuationAgent
-    | IndustryComparisonAgent
-    | MacroAgent
-    | TechnicalAgent
-    | BacktestAgent
-    | PortfolioAgent,
-    dict[str, object],
-]
+SourceAgentTask = tuple[str, object, dict[str, object]]
 
 
 def _run_agent_group_stage(
@@ -505,20 +465,7 @@ def _resolve_llm_client(
 
 
 def _run_agent(
-    agent: (
-        FundamentalAgent
-        | FinancialStatementAgent
-        | ValuationAgent
-        | IndustryComparisonAgent
-        | MacroAgent
-        | TechnicalAgent
-        | BacktestAgent
-        | PortfolioAgent
-        | ResearchCoordinatorAgent
-        | BullAgent
-        | BearAgent
-        | RiskAgent
-    ),
+    agent: object,
     input_data: dict[str, object],
     workspace: Workspace,
 ) -> int:
@@ -558,25 +505,17 @@ def _print_commit(commit: ClaimEvidenceCommit) -> None:
     print(f"    temporal_status: {commit.temporal_status}")
 
 
-def _print_merge_result(merge_result: MergeResult, merge_agent: MergeAgent) -> None:
-    """Print the merge result in a readable audit format."""
+def _print_merge_result(merge_result: MergeResult, _agent: object = None) -> None:
+    """Print the merge/decision result in a readable audit format."""
 
-    print("[merge-result]")
+    ds = merge_result.decision_scores
+    print("[decision-result]")
     print(f"  final_recommendation: {merge_result.final_recommendation}")
     print(f"  confidence: {merge_result.confidence}")
-    print(f"  support_score: {merge_agent.support_score}")
-    print(f"  risk_score: {merge_agent.risk_score}")
-    print(f"  opposition_score: {merge_agent.opposition_score}")
-    print(f"  entry_score: {merge_result.decision_scores.entry_score}")
-    print(f"  risk_reward_score: {merge_result.decision_scores.risk_reward_score}")
-    print(f"  conviction_score: {merge_result.decision_scores.conviction_score}")
-    print(f"  valuation_attractiveness: {merge_result.decision_scores.valuation_attractiveness}")
-    print(f"  technical_timing_score: {merge_result.decision_scores.technical_timing_score}")
-    print(f"  risk_level: {merge_result.decision_scores.risk_level}")
-    print(
-        "  position_sizing_suggestion: "
-        f"{merge_result.decision_scores.position_sizing_suggestion}"
-    )
+    print(f"  directional_conviction: {ds.directional_conviction}")
+    print(f"  entry_timing: {ds.entry_timing}")
+    print(f"  risk_level: {ds.risk_level}")
+    print(f"  position_sizing_suggestion: {ds.position_sizing_suggestion}")
     print()
 
     print("  supporting_claims:")
