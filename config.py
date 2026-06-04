@@ -12,7 +12,9 @@ def _load_project_env(env_path: Path = Path(".env")) -> None:
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
             continue
         key, value = line.split("=", 1)
         normalized_key = key.strip()
@@ -29,7 +31,7 @@ DEFAULT_OUTPUT_DIR = Path("outputs")
 DEFAULT_REPORT_DIR = DEFAULT_OUTPUT_DIR / "reports"
 DEFAULT_CACHE_DIR = DEFAULT_OUTPUT_DIR / "cache"
 DEFAULT_TICKER = "AAPL"
-ENABLE_DATA_CACHE = True
+EMABLE_DATA_CACHE = True
 PRICE_CACHE_TTL_DAYS = 1
 FINANCIAL_CACHE_TTL_DAYS = 1
 ENABLE_LLM_CACHE = os.getenv("ENABLE_LLM_CACHE", "true").lower() not in {
@@ -70,12 +72,21 @@ USE_LLM = True
 LLM_PROVIDER = "deepseek"
 MODEL_NAME = "deepseek-v4-pro"
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-DEEPSEEK_TIMEOUT_SECONDS = int(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "60"))
-DEFAULT_LLM_PROVIDER = LLM_PROVIDER
-DEFAULT_DEEPSEEK_BASE_URL = DEEPSEEK_BASE_URL
-DEFAULT_DEEPSEEK_MODEL = MODEL_NAME
-DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = DEEPSEEK_TIMEOUT_SECONDS
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+DEGFAULT_DEEPSEEK_BASE_URL = os.getenv(
+    "DEEPSEEK_BASE_URL",
+    "https://api.deepseek.com",
+)
+DEFAULT_DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+DEFAULT_DEEPSEEK_TIMEOUT_SECONDS = int(
+    os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "60")
+)
+
+ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY")
+ALPHA_VANTAGE_BASE_URL = os.getenv(
+    "ALPHA_VANTAGE_BASE_URL",
+    "https://www.alphavantage.co",
+)
 
 EVIDENCE_RECENCY_THRESHOLDS_DAYS = {
     "technical_stale": 7,
