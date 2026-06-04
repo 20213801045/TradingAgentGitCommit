@@ -1,54 +1,25 @@
-"""Data provider abstractions for EVIR."""
+"""Data provider factory for EVIR.
 
-from abc import ABC, abstractmethod
-from typing import Any
+Supports:
+- 'alpha_vantage' (primary, real-time)
+- 'real' (yfinance)
+- 'mock' (deterministic, for testing)
+"""
 
-from data.mock_data import get_mock_company_data
-
-
-class BaseDataProvider(ABC):
-    """Interface for company research data providers."""
-
-    name: str
-
-    @abstractmethod
-    def fetch_company_data(self, ticker: str) -> dict[str, Any]:
-        """Fetch company data for a ticker."""
+from data.alpha_vantage import AlphaVantageProvider
+from data.real_data import RealDataProvider
+from data.mock_data import MockDataProvider
+from data.base import BaseDataProvider
 
 
-class MockDataProvider(BaseDataProvider):
-    """Deterministic local data provider used by tests and demos."""
+def get_data_provider(provider_name: str) -> BaseDataProvider:
+    """Factory to get the right data provider."""
 
-    name = "mock"
-
-    def fetch_company_data(self, ticker: str) -> dict[str, Any]:
-        """Return local mock company data."""
-
-        return get_mock_company_data(ticker)
-
-
-class RealDataProvider(BaseDataProvider):
-    """yfinance-backed provider for real market and financial data."""
-
-    name = "real"
-
-    def fetch_company_data(self, ticker: str) -> dict[str, Any]:
-        """Return yfinance-backed company data in EVIR's input shape."""
-
-        from data.real_data import get_real_company_data
-
-        return get_real_company_data(ticker)
-
-
-def get_data_provider(provider_name: str = "mock") -> BaseDataProvider:
-    """Create a data provider by name."""
-
-    normalized_name = provider_name.lower().strip()
-    if normalized_name == "mock":
-        return MockDataProvider()
-    if normalized_name in {"real", "yfinance"}:
+    name = provider_name.lower().strip()
+    if name == "alpha_vantage" or name == "alphavantage":
+        return AlphaVantageProvider()
+    if name == "real":
         return RealDataProvider()
-    raise ValueError(
-        f"Unsupported data provider '{provider_name}'. "
-        "Available providers: mock, real."
-    )
+    if name == "mock":
+        return MockDataProvider()
+    raise ValueError(f"Unknown data provider: {provider_name}")
