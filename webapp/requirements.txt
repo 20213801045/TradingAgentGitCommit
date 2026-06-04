@@ -1,0 +1,5 @@
+flask>=3.0
+pydantic>=2.7,<3.0
+yfinance>=0.2.40
+pandas>=2.0,<3.0
+numpy>=1.26,<3.0
