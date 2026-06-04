@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EVIR ┅ Multi-Agent Investment Research</title>
+    <link rel="stylesheet" href="/{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h2>EVIR</h2>
+            <span class="version">v2.0</span>
+        </div>
+        <nav class="sidebar-nav">
+            <button class="nav-btn active" data-target="chat">
+                <span class="icon">💫</span>
+                Chat
+            </button>
+            <button class="nav-btn" data-target="evaluate">
+                <span class="icon">📊</span>
+                Evaluate
+            </button>
+        </nav>
+        <div class="sidebar-footer">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Initializing...</span>
+        </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Chat Panel -->
+        <section class="panel active" id="panel-chat">
+            <div class="chat-container">
+                <div class="chat-messages" id="chat-messages">
+                    <div class="message bot">
+                        <div class="message-avatar">😩</div>
+                        <div class="message-body">
+                            <p>Hello! I'm EVIR, your AI-powered investment research assistant. You can ask me about stocks, investment strategies, or run a full multi-agent evaluation by clicking the "Evaluate" tab.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="chat-input">
+                    <textarea id="chat-input-field" placeholder="Ask about stocks or investment strategies..." rows="2"></textarea>
+                    <button id="chat-send-btn">Send</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Evaluate Panel -->
+        <section class="panel" id="panel-evaluate">
+            <div class="eval-container">
+                <div class="eval-header">
+                    <h2>📊 Stock Evaluation</h2>
+                    <p>Enter a stock ticker to run the full multi-agent EVIR pipeline.</p>
+                </div>
+                <div class="eval-input">
+                    <input type="text" id="ticker-input" placeholder="Enter ticker (e.g., AAPL)" autofocus>
+                    <button id="eval-run-btn">🚶 Run Analysis</button>
+                </div>
+                <div class="eval-progress" id="eval-progress"></div>
+                <div class="eval-result" id="eval-result"></div>
+            </div>
+        </section>
+    </main>
+
+    <script src="/{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
