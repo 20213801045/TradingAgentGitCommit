@@ -1,86 +1,48 @@
-"""LLM-first technical & timing agent — replaces technical_agent + backtest_agent."""
-
-from __future__ import annotations
-
-import json
-from typing import Any
-
-from pydantic import BaseModel, Field, ValidationError
+"""LLM-backed technical timing agent — analyzes trend, momentum, volatility, and timing signals."""
 
 from agents.base_agent import BaseAgent
-from llm.base import BaseLLMClient, LLMError, LLMMessage
-from llm.json_utils import parse_json_response
-from models.schemas import ClaimEvidenceCommit, Workspace
+from models.schemas import ClaimEvidenceCommit, Evidence
+from llm.base import LLMError, LLMMessage
 
-
-class TechInsight(BaseModel):
-    dimension: str = Field(description="trend|momentum|volatility|support_resistance|timing")
-    claim: str = Field(min_length=15)
-    confidence: str = "medium"
-    risk_tag: str = "technical"
-    time_horizon: str = "1-3 months"
-
-
-class TechnicalOutput(BaseModel):
-    insights: list[TechInsight] = Field(min_length=3, max_length=6)
-
-
-SYSTEM_PROMPT = """You are a technical analyst at a trading desk. Analyze the price/indicator data.
-Produce 3-6 insights covering: trend (moving averages), momentum (RSI/MACD), volatility, support/resistance, and entry timing.
-Be specific: "RSI at 69.5 suggests..." not "momentum seems OK".
-If data is missing, note the gap.
-Return valid JSON: {"insights":[{"dimension":"trend|momentum|volatility|support_resistance|timing","claim":"...","confidence":"low|medium|high","risk_tag":"...","time_horizon":"..."}]}"""
+import json
+from datetime import datetime, timezone
+from uuid import uuid4
 
 
 class TechnicalTimingAgent(BaseAgent):
-    """LLM-first technical analysis with timing signals."""
+    """AN LLM-backed price trend, volatility, and timing signal analyst."""
 
-    name = "TechnicalTimingAgent"
-    role = "technical-timing-agent"
-    branch_name = "technical-analysis"
+    role = "technical-timing"
 
-    def __init__(self, llm_client: BaseLLMClient | None = None) -> None:
-        self.llm_client = llm_client
+    def analyze(self, input_data: dict, workspace: "Workspace") -> list[ClaimEvidenceCommit]:
+        """Run an LLM-backed technical timing analysis or fallback."""
 
-    def analyze(self, input_data: dict[str, Any], workspace: Workspace) -> list[ClaimEvidenceCommit]:
-        if self.llm_client is not None:
-            try:
-                return self._llm_analyze(input_data, workspace)
-            except (LLMError, json.JSONDecodeError, ValidationError):
-                pass
-        return self._fallback(input_data)
-
-    def _llm_analyze(self, input_data: dict[str, Any], workspace: Workspace) -> list[ClaimEvidenceCommit]:
+        ticker = input_data.get("ticker", "UNKNOWN")
         market = input_data.get("market_data", {})
-        indicators = input_data.get("technical_indicators", {})
-        timestamp = str(input_data.get("as_of_date", "2026-05-22"))
 
-        all_data = {**market, **indicators}
-        prompt = (
-            f"Ticker: {workspace.ticker}\n"
-            "Technical data:\n" + "\n".join(f"- {k}: {v}" for k, v in sorted(all_data.items())) +
-            "\n\nProduce 3-6 technical insights. Be quantitative. Return JSON."
-        )
-        response = self.llm_client.complete(  # type: ignore[union-attr]
-            [LLMMessage(role="system", content=SYSTEM_PROMPT), LLMMessage(role="user", content=prompt)],
-            temperature=0.1, response_format={"type": "json_object"},
-        )
-        parsed = parse_json_response(response.content)
-        validated = TechnicalOutput.model_validate(parsed)
+        if self.llm_client:
+            try:
+                prompt = f"""Analyze the price trend, momentum, volatility, and timing for {ticker}\n                    Market Data: {json.dumps(market)}\n                    Provide 1-2 technical insights."""
+                response = self.llm_client.complete([
+                    LLMMessage(role="system", content=prompt),
+                ])
+                claim = response.content
+            except LLMError:
+                claim = f"Technical data unavailable for {ticker}"
+        else:
+            claim = f"Technical data unavailable for {ticker}"
 
-        commits: list[ClaimEvidenceCommit] = []
-        for ins in validated.insights:
-            commits.append(self.create_commit(
-                claim=ins.claim.strip(),
-                evidence=self._make_evidence(content=ins.claim, source="Technical Analysis (LLM)", source_type="llm_technical", timestamp=timestamp, metric_name=ins.dimension, metric_value=ins.dimension),
-                confidence=ins.confidence, risk_tag=ins.risk_tag, time_horizon=ins.time_horizon,
-            ))
-        return commits
-
-    def _fallback(self, input_data: dict[str, Any]) -> list[ClaimEvidenceCommit]:
-        timestamp = str(input_data.get("as_of_date", "2026-05-22"))
-        return [self.create_commit(
-            claim="Technical analysis unavailable — enable LLM for real technical insights.",
-            evidence=self._make_evidence(content="No LLM available for technical analysis.", source="System", source_type="system", timestamp=timestamp, metric_name="technical", metric_value="unavailable"),
-            confidence="low", risk_tag="technical_evidence_gap", time_horizon="N/A",
+        return [self._make_commit(
+            branch_name="technical-analysis",
+            claim=claim[:500],
+            evidence=Evidence(
+                evidence_id=uuid4().hex[:8],
+                content=claim[:500],
+                source=f"ticker:{ticker}",
+                source_type="llm",
+                timestamp=datetime.now(timezone.utc).isoformat(),
+            ),
+            confidence="medium",
+            risk_tag="adrift",
+            time_horizon="3-6 months",
         )]
