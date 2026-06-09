@@ -73,12 +73,33 @@ overconfident agents get tempered and accurate agents gain more weight in future
 
 ## 🏗️ Architecture (v2.0)
 
-*(See repository for full file listing)*
+```
+DATA LAYER                    AGENT LAYER                     DECISION LAYER
+┌──────────────┐     ┌─────────────────────────┐     ┌─────────────────────┐
+│ Alpha Vantage │────▶│ ResearchCoordinator     │     │                     │
+│  (primary)   │     │  (research plan)        │     │   DebateAgent       │
+├──────────────┤     ├─────────────────────────┤     │   ┌─────────────┐   │
+│  yfinance    │     │ DeepResearchAgent       │     │   │ 🟢 BULL     │   │
+│  (fallback)  │     │  (fundamental/valuation)│────▶│   │ 🔴 BEAR     │──▶│ Buy/Sell/Hold
+├──────────────┤     ├─────────────────────────┤     │   │ ⚪ CHAIR    │   │
+│  Mock data   │     │ MacroSentimentAgent     │     │   └─────────────┘   │
+│  (testing)   │     │  (macro/rate/sentiment) │     └─────────────────────┘
+└─────────────┘     ├─────────────────────────┤              │
+                     │ TechnicalTimingAgent    │              ▼
+                     │  (trend/momentum/timing)│     ┌─────────────────────┐
+                     ├─────────────────────────┤     │ TradePlanReportAgent │
+                     │ RiskAgent               │     │ (entry/stop/target/  │
+                     │  (risk audit)           │     │  position/risk)      │
+                     ├─────────────────────────┤     └─────────────────────┘
+                     │ CounterEvidenceAgent    │
+                     │  (challenge bull case)  │
+                     └─────────────────────────┘
+```
 
 ### Agent roster
 
 | Agent | Role | LLM | Output |
-|-------|------|----|--------|
+|-------|------|-----|--------|
 | `ResearchCoordinatorAgent` | Research plan, coverage review, pre-merge audit | ✅ | Plan & review commits |
 | `DeepResearchAgent` | Fundamental, financial, valuation, industry analysis | ✅ | Evidence commits |
 | `MacroSentimentAgent` | Macro environment, rates, FX, sentiment | ✅ | Evidence commits |
@@ -150,7 +171,46 @@ python main.py --llm-provider none
 
 ## 📂 Project Layout
 
-*(See repository for full file listing)*
+```
+EVIR/
+├── main.py                  # CLI pipeline entry point
+├── paper_trade.py           # Paper trading CLI
+├── config.py                # Global configuration
+├── requirements.txt         # Core dependencies
+│
+├── agents/                  # Active v2.0 agents (8)
+│   ├── debate_agent.py             # LLM Bull/Bear/Chair debate
+│   ├── trade_plan_report_agent.py  # Trade plan report generator
+│   ├── deep_research_agent.py      # LLM fundamental/valuation
+│   ├── macro_sentiment_agent.py    # LLM macro/sentiment
+│   ├── technical_timing_agent.py   # LLM technical/timing
+│   ├── research_coordinator_agent.py
+│   ├── risk_agent.py
+│   ├── counter_evidence_agent.py
+│   ├── base_agent.py               # Base class
+│   └── legacy/                     # v1.x template agents (13, deprecated)
+│
+├── data/                    # Alpha Vantage, yfinance, caching
+├── llm/                     # DeepSeek client, caching, JSON utils
+├── evidence/                # Evidence scoring & temporal checks
+├── revision/                # Decision revision engine
+├── evaluation/              # Audit & quality metrics
+├── memory/                  # Workspace JSON storage
+├── paper_trading/           # Simulated trading engine
+├── models/                  # Pydantic schemas
+│
+├── webapp/                  # Flask chat platform
+│   ├── app.py                      # Flask application
+│   ├── backend/
+│   │   ├── chat.py                 # DeepSeek chat (streaming)
+│   │   └── evir_runner.py          # Pipeline wrapper with SSE
+│   ├── templates/index.html        # Chat + eval UI
+│   ├── static/css/style.css        # Dark theme
+│   └── static/js/app.js            # Frontend logic
+│
+├── outputs/                 # Generated workspaces, reports, caches
+└── tests/                   # Test suite (82 tests, all passing ✅)
+```
 
 ---
 
@@ -161,7 +221,7 @@ Create a `.env` file in the project root:
 ```bash
 # Required — AI chat + agent intelligence
 DEEPSEEK_API_KEY=your_deepseek_api_key
-DEEPSEEK_MODEL=deepseek-v4-prop
+DEEPSEEK_MODEL=deepseek-v4-pro
 
 # Optional — for richer fundamental/macro data
 ALPHA_VANTAGE_API_KEY=your_alpha_vantage_key
